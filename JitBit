@@ -1,0 +1,326 @@
+USE [S3Reporting]
+GO
+/****** Object:  StoredProcedure [dbo].[JB_JitBit]    Script Date: 7/9/2020 9:58:34 AM ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+
+
+ALTER procedure [dbo].[JB_JitBit]
+AS
+
+set nocount on
+
+
+--Create temp table to get data from freshdesk with true due date
+--drop table #JB_JitBit1
+select	Jitbit.*, 
+		ROW_NUMBER ( )   OVER (partition by TicketId order by TicketId, UpdateDate asc) as Row#
+Into	#JB_JitBit1
+from	Jitbit
+--where	--(LinkedTicket is NULL or LEN(LinkedTicket) > 7) and 
+--ticketid = 24195370
+
+
+		--select * from #JB_JitBit1
+
+
+--Create temp table to get max udpated on date
+--drop table #JB_JitBit_MaxUpdated
+select		distinct TicketId, max(UpdateDate) as MaxDate
+into		#JB_JitBit_MaxUpdated
+from		Jitbit
+--where	--(LinkedTicket is NULL or LEN(LinkedTicket) > 7) and
+-- ticketid = 24195370
+group by	TicketId
+
+		--select * from #JB_JitBit_MaxUpdated
+
+
+--Create temp table to get max row #
+
+select	TicketId, max(Row#) as 'MaxRow'
+into	#JB_JitBit_MaxRow2
+from	#JB_JitBit1
+group by TicketId
+
+
+		-- select * from #JB_JitBit_MaxRow2
+
+
+--Join of all tables
+
+select	distinct #JB_JitBit1.TicketId, #JB_JitBit1.TechTeam, #JB_JitBit1.Technician, dateadd(hour, -5, #JB_JitBit1.CreateDate) as CreateDate, 
+		#JB_JitBit1.[Status], 
+		case
+			when #JB_JitBit1.DueDate is null then dateadd(day, 14, #JB_JitBit1.CreateDate)
+			else dateadd(hour, -5, #JB_JitBit1.DueDate) 
+			end as DueDate, 
+		dateadd(hour, -5, #JB_JitBit1.ResolveDate) as ResolveDate, 
+		#JB_JitBit1.RequesterTeam, #JB_JitBit1.Requester, #JB_JitBit1.Casename, #JB_JitBit1.Agency_Collector, #JB_JitBit1.Category, 
+		#JB_JitBit1.Detail, #JB_JitBit1.[Subject], #JB_JitBit1.DifficultyLevel, #JB_JitBit1.ProcessTime, #JB_JitBit1.Archer_Priority, 
+		#JB_JitBit1.LinkedTicket, dateadd(hour, -5, #JB_JitBit1.UpdateDate) as UpdateDate, #JB_JitBit1.Tags, #JB_JitBit1.Row#,  
+		Case
+			When #JB_JitBit1.ProcessTime = 'Less than 1 hour' then 0.5
+			When #JB_JitBit1.ProcessTime = '1-4 hours' then 2.5
+			When #JB_JitBit1.ProcessTime = '4-8 hours' then 6
+			When #JB_JitBit1.ProcessTime = 'More than 8 hours' then 10
+			Else 0
+			End as 'ProcessTime_ForCalcs',
+		Case
+			When #JB_JitBit1.Category like '%Liens - Case Updates%' and #JB_JitBit1.Detail like '%Disbursement Report%' then 'Case Updates: Disbursement Report'
+			When #JB_JitBit1.Category like '%Liens - Case Updates%' and #JB_JitBit1.Detail like '%Final Status Letter/Payment Cover Sheet Needed%' then 'Case Updates: Final Status Letter/Payment Cover Sheet Needed'
+			When #JB_JitBit1.Category like '%Liens - Case Updates%' and #JB_JitBit1.Detail like '%Other%' then 'Case Updates: Other'
+			When #JB_JitBit1.Category like '%Liens - Case Updates%' and #JB_JitBit1.Detail like '%Pull Lien Status Report%' then 'Case Updates: Pull Lien Status Report'
+			When #JB_JitBit1.Category like '%Liens - Case Updates%' and #JB_JitBit1.Detail like '%Red Flags%' then 'Case Updates: Red Flags'
+			When #JB_JitBit1.Category like '%Liens - Case Updates%' and #JB_JitBit1.Detail like '%Research%' then 'Case Updates: Research'
+			When #JB_JitBit1.Category like '%Liens - Case Updates%' and #JB_JitBit1.Detail like '%Update SLAM Case Data%' then 'Case Updates: Update SLAM Case Data'
+			When #JB_JitBit1.Category like '%Liens - Case Updates%' and #JB_JitBit1.Detail like '%Update SLAM Client Data%' then 'Case Updates: Update SLAM Client Data'
+			When #JB_JitBit1.Category like '%Liens - Case Updates%' and #JB_JitBit1.Detail like '%Update SLAM Lien Data%' then 'Case Updates: Update SLAM Lien Data'
+			When #JB_JitBit1.Category like '%Liens - Claims%' and #JB_JitBit1.Detail like '%Other%' then 'Claims: Other'
+			When #JB_JitBit1.Category like '%Liens - Claims%' and #JB_JitBit1.Detail like '%Process Medicaid EV and Claims Response%' then 'Claims: Process Medicaid EV and Claims Response'
+			When #JB_JitBit1.Category like '%Liens - Claims%' and #JB_JitBit1.Detail like '%Process PLRP Claims Response%' then 'Claims: Process PLRP Claims Response'
+			When #JB_JitBit1.Category like '%Liens - Claims%' and #JB_JitBit1.Detail like '%Process Global Values Rec%' then 'Claims: Process Global Values Recd (Injury Detail Response)'
+			When #JB_JitBit1.Category like '%Liens - Claims%' and #JB_JitBit1.Detail like '%Process Medicaid Claims Response%' then 'Claims: Process Medicaid Claims Response'
+			When #JB_JitBit1.Category like '%Liens - Claims%' and #JB_JitBit1.Detail like '%Process Non-PLRP EV & Claims Response%' then 'Claims: Process Non-PLRP EV & Claims Response'
+			When #JB_JitBit1.Category like '%Liens - Claims%' and #JB_JitBit1.Detail like '%Process Medicaid Audits Response%' then 'Claims: Process Medicaid Audits Response'
+			When #JB_JitBit1.Category like '%Liens - Claims%' and #JB_JitBit1.Detail like '%Review Claimants for Medicare Compromise%' then 'Claims: Review Claimants for Medicare Compromise'
+			When #JB_JitBit1.Category like '%Liens - Claims%' and #JB_JitBit1.Detail like '%Update Misc. Lien Data%' then 'Claims: Update Misc. Lien Data'
+			When #JB_JitBit1.Category like '%Liens - Claims%' and #JB_JitBit1.Detail like '%Run Files Through Auditor%' then 'Claims: Run Files Through Auditor'
+			When #JB_JitBit1.Category like '%Liens - Claims%' and #JB_JitBit1.Detail like '%Process PLRP EV and Claims Response%' then 'Claims: Process PLRP EV and Claims Response'
+			When #JB_JitBit1.Category like '%Liens - Claims%' and #JB_JitBit1.Detail like '%Create or Update MCOs%' then 'Claims: Create or Update MCOs'
+			When #JB_JitBit1.Category like '%Liens - Claims%' and #JB_JitBit1.Detail like '%Research/Correct Misc. Discrepancies%' then 'Claims: Research/Correct Misc. Discrepancies'
+			When #JB_JitBit1.Category like '%Liens - Claims%' and #JB_JitBit1.Detail like '%Create Injury Detail (Global Values Submission)%' then 'Claims: Create Injury Detail (Global Values Submission)'
+			When #JB_JitBit1.Category like '%Liens - Claims Online%' and #JB_JitBit1.Detail like '%Other%' then 'Claims Online: Other'
+			When #JB_JitBit1.Category like '%Liens - Claims Online%' and #JB_JitBit1.Detail like '%Research/Correct Misc. Discrepancies%' then 'Claims Online: Research/Correct Misc. Discrepancies'
+			When #JB_JitBit1.Category like '%Liens - Claims Online%' and #JB_JitBit1.Detail like '%Executive Management or Ethan Request%' then 'Claims Online: Executive Management or Ethan Request'
+			When #JB_JitBit1.Category like '%Liens - Claims Online%' and #JB_JitBit1.Detail like '%One-Off Update%' then 'Claims Online: One-Off Update'
+			When #JB_JitBit1.Category like '%Liens - Claims Online%' and #JB_JitBit1.Detail like '%Process Final Report%' then 'Claims Online: Process Final Report'
+			When #JB_JitBit1.Category like '%Liens - Claims Online%' and #JB_JitBit1.Detail like '%Process Misc. Report%' then 'Claims Online: Process Misc. Report'
+			When #JB_JitBit1.Category like '%Liens - Claims Online%' and #JB_JitBit1.Detail like '%Research%' then 'Claims Online: Research'
+			When #JB_JitBit1.Category like '%Liens - Claims Online%' and #JB_JitBit1.Detail like '%Bulk Edit Update for a Case%' then 'Claims Online: Bulk Edit Update for a Case'
+			When #JB_JitBit1.Category like '%Liens - Claims Online%' and #JB_JitBit1.Detail like '%Process Draft Report%' then 'Claims Online: Process Draft Report'
+			When #JB_JitBit1.Category like '%Liens - EV%' and #JB_JitBit1.Detail like '%Process CMS VOE - Main%' then 'EV: Process CMS VOE - Main'
+			When #JB_JitBit1.Category like '%Liens - EV%' and #JB_JitBit1.Detail like '%Update Misc. Lien Data%' then 'EV: Update Misc. Lien Data'
+			When #JB_JitBit1.Category like '%Liens - EV%' and #JB_JitBit1.Detail like '%Create or Update MCOs%' then 'EV: Create or Update MCOs'
+			When #JB_JitBit1.Category like '%Liens - EV%' and #JB_JitBit1.Detail like '%Create Medicare VOE Submission%' then 'EV: Create Medicare VOE Submission'
+			When #JB_JitBit1.Category like '%Liens - EV%' and #JB_JitBit1.Detail like '%Process CMS VOE - Reverification Data (Main Processing)%' then 'EV: Process CMS VOE - Reverification Data (Main Processing)'
+			When #JB_JitBit1.Category like '%Liens - EV%' and #JB_JitBit1.Detail like '%Process Medicaid EV Response%' then 'EV: Process Medicaid EV Response'
+			When #JB_JitBit1.Category like '%Liens - EV%' and #JB_JitBit1.Detail like '%Process PLRP No Interest List%' then 'EV: Process PLRP No Interest List'
+			When #JB_JitBit1.Category like '%Liens - EV%' and #JB_JitBit1.Detail like '%Other%' then 'EV: Other'
+			When #JB_JitBit1.Category like '%Liens - EV%' and #JB_JitBit1.Detail like '%Research/Correct Misc. Discrepancies%' then 'EV: Research/Correct Misc. Discrepancies'
+			When #JB_JitBit1.Category like '%Liens - EV%' and #JB_JitBit1.Detail like '%Process CMS VOE - Part Cs%' then 'EV: Process CMS VOE - Part Cs'
+			When #JB_JitBit1.Category like '%Liens - EV%' and #JB_JitBit1.Detail like '%Update Medicare Report Reference%' then 'EV: Update Medicare Report Reference'
+			When #JB_JitBit1.Category like '%Liens - EV%' and #JB_JitBit1.Detail like '%Process BCRC Response%' then 'EV: Process BCRC Response'
+			When #JB_JitBit1.Category like '%Liens - EV%' and #JB_JitBit1.Detail like '%Double Nos%' then 'EV: Double Nos'
+			When #JB_JitBit1.Category like '%Liens - EV%' and #JB_JitBit1.Detail like '%Process Tricare Report%' then 'EV: Process Tricare Report'
+			When #JB_JitBit1.Category like '%Liens - EV%' and #JB_JitBit1.Detail like '%HMO Code Research%' then 'EV: HMO Code Research'
+			When #JB_JitBit1.Category like '%Liens - EV%' and #JB_JitBit1.Detail like '%Process PLRP EV Response%' then 'EV: Process PLRP EV Response'
+			When #JB_JitBit1.Category like '%Liens - Finalization%' and #JB_JitBit1.Detail like '%Research/Correct Misc. Discrepancies%' then 'Finalization: Research/Correct Misc. Discrepancies'
+			When #JB_JitBit1.Category like '%Liens - Finalization%' and #JB_JitBit1.Detail like '%Other%' then 'Finalization: Other'
+			When #JB_JitBit1.Category like '%Liens - Finalization%' and #JB_JitBit1.Detail like '%Lien Finalization%' then 'Finalization: Lien Finalization'
+			When #JB_JitBit1.Category like '%Liens - Finalization%' and #JB_JitBit1.Detail like '%Update Misc. Lien Data%' then 'Finalization: Update Misc. Lien Data'
+			When #JB_JitBit1.Category like '%Liens - GRG%' and #JB_JitBit1.Detail like '%Research%' then 'GRG: Research'
+			When #JB_JitBit1.Category like '%Liens - GRG%' and #JB_JitBit1.Detail like '%Other%' then 'GRG: Other'
+			When #JB_JitBit1.Category like '%Liens - GRG%' and #JB_JitBit1.Detail like '%Update One-Off from HB Report%' then 'GRG: Update One-Off from HB Report'
+			When #JB_JitBit1.Category like '%Liens - GRG%' and #JB_JitBit1.Detail like '%Send GRG Updated Claimant and/or Discrepancy Data%' then 'GRG: Send GRG Updated Claimant and/or Discrepancy Data'
+			When #JB_JitBit1.Category like '%Liens - GRG%' and #JB_JitBit1.Detail like '%GRG Data Discrepancies%' then 'GRG: GRG Data Discrepancies'
+			When #JB_JitBit1.Category like '%Liens - GRG%' and #JB_JitBit1.Detail like '%Process Holdback Report%' then 'GRG: Process Holdback Report'
+			When #JB_JitBit1.Category like '%Liens - Intake%' and #JB_JitBit1.Detail like '%Client Receivables / Update Surgery, Ingestion, or Injury Data%' then 'Intake: Client Receivables / Update Surgery, Ingestion, or Injury Data'
+			When #JB_JitBit1.Category like '%Liens - Intake%' and #JB_JitBit1.Detail like '%Client Receivables / Research/Correct Misc. Discrepancies%' then 'Intake: Client Receivables / Research/Correct Misc. Discrepancies'
+			When #JB_JitBit1.Category like '%Liens - Intake%' and #JB_JitBit1.Detail like '%Client Receivables / Update SSN or DOB (or Both)%' then 'Intake: Client Receivables / Update SSN or DOB (or Both)'
+			When #JB_JitBit1.Category like '%Liens - Intake%' and #JB_JitBit1.Detail like '%Client Receivables / Create New Client(s)%' then 'Intake: Client Receivables / Create New Client(s)'
+			When #JB_JitBit1.Category like '%Liens - Intake%' and #JB_JitBit1.Detail like '%Client Receivables / Update Claimant Demographic Data%' then 'Intake: Client Receivables / Update Claimant Demographic Data'
+			When #JB_JitBit1.Category like '%Liens - Intake%' and #JB_JitBit1.Detail like '%Client Receivables / Scope Change/Check%' then 'Intake: Client Receivables / Scope Change/Check'
+			When #JB_JitBit1.Category like '%Liens - Intake%' and #JB_JitBit1.Detail like '%Client Receivables / Initial Case Intake (without instructions)%' then 'Intake: Client Receivables / Initial Case Intake (without instructions)'
+			When #JB_JitBit1.Category like '%Liens - Intake%' and #JB_JitBit1.Detail like '%Client Receivables / Create New Product(s)%' then 'Intake: Client Receivables / Create New Product(s)'
+			When #JB_JitBit1.Category like '%Liens - Intake%' and #JB_JitBit1.Detail like '%Client Receivables / Update Attorney Fees or Expenses (or Both)%' then 'Intake: Client Receivables / Update Attorney Fees or Expenses (or Both)'
+			When #JB_JitBit1.Category like '%Liens - Intake%' and #JB_JitBit1.Detail like '%Client Receivables / Initial Case Intake (with instructions)%' then 'Intake: Client Receivables / Initial Case Intake (with instructions)'
+			When #JB_JitBit1.Category like '%Liens - Intake%' and #JB_JitBit1.Detail like '%Client Receivables / Initial Case Intake%' then 'Intake: Client Receivables / Initial Case Intake'
+			When #JB_JitBit1.Category like '%Liens - Intake%' and #JB_JitBit1.Detail like '%Client Receivables / Process AMS Inventory%' then 'Intake: Client Receivables / Process AMS Inventory'
+			When #JB_JitBit1.Category like '%Liens - Intake%' and #JB_JitBit1.Detail like '%Client Receivables / Update Settlement Data Field(s)%' then 'Intake: Client Receivables / Update Settlement Data Field(s)'
+			When #JB_JitBit1.Category like '%Liens - Intake%' and #JB_JitBit1.Detail like '%Client Receivables / Update Misc. Lien Data%' then 'Intake: Client Receivables / Update Misc. Lien Data'
+			When #JB_JitBit1.Category like '%Liens - Intake%' and #JB_JitBit1.Detail like '%Client Receivables / Response to Missing Info%' then 'Intake: Client Receivables / Response to Missing Info'
+			When #JB_JitBit1.Category like '%Liens - Intake%' and #JB_JitBit1.Detail like '%Client Receivables / Other%' then 'Intake: Client Receivables / Other'
+			When #JB_JitBit1.Category like '%Liens - Intake%' and #JB_JitBit1.Detail like '%Client Receivables / Move Claimant/Liens from Hold/Closed Case to Active Case%' then 'Intake: Client Receivables / Move Claimant/Liens from Hold/Closed Case to Active Case'
+			When #JB_JitBit1.Category like '%Liens - Intake%' and #JB_JitBit1.Detail like '%Client Receivables / Create/Update EIF Claimants%' then 'Intake: Client Receivables / Create/Update EIF Claimants'
+			When #JB_JitBit1.Category like '%Liens - Intake%' and #JB_JitBit1.Detail like '%Client Receivables / Misc. EIF Updates%' then 'Intake: Client Receivables / Misc. EIF Updates'
+			When #JB_JitBit1.Category like '%Liens - Intake%' and #JB_JitBit1.Detail like '%Client Receivables / Intake Inventory Review%' then 'Intake: Client Receivables / Intake Inventory Review'
+			When #JB_JitBit1.Category like '%Liens - Intake%' and #JB_JitBit1.Detail like '%Client Receivables / Update QPO Data%' then 'Intake: Client Receivables / Update QPO Data'
+			When #JB_JitBit1.Category like '%Liens - Intake%' and #JB_JitBit1.Detail like '%Client Receivables / Create Deficiencies%' then 'Intake: Client Receivables / Create Deficiencies'
+			When #JB_JitBit1.Category like '%Liens - Intake%' and #JB_JitBit1.Detail like '%Client Receivables / Move Claimant/Liens to Hold/Closed Case%' then 'Intake: Client Receivables / Move Claimant/Liens to Hold/Closed Case'
+			When #JB_JitBit1.Category like '%Liens - Intake%' and #JB_JitBit1.Detail like '%Client Receivables / Create/Update EIF Products%' then 'Intake: Client Receivables / Create/Update EIF Products'
+			When #JB_JitBit1.Category like '%Liens - Intake%' and #JB_JitBit1.Detail like '%Client Receivables / Update Settlement Date%' then 'Intake: Client Receivables / Update Settlement Date'
+			When #JB_JitBit1.Category like '%Liens - Intake%' and #JB_JitBit1.Detail like '%Client Receivables / Update Gross Settlement Amount%' then 'Intake: Client Receivables / Update Gross Settlement Amount'
+			When #JB_JitBit1.Category like '%Liens - Other%' and #JB_JitBit1.Detail like '%Other%' then 'Other: Other'
+			When #JB_JitBit1.Category like '%Liens - Other%' and #JB_JitBit1.Detail like '%Create HMO backup%' then 'Other: Create HMO backup'
+			When #JB_JitBit1.Category like '%Liens - PLRP Escalation%' and #JB_JitBit1.Detail like '%Other%' then 'PLRP Escalation: Other'
+			When #JB_JitBit1.Category like '%Liens - PLRP Escalation%' and #JB_JitBit1.Detail like '%Anti-Subrogation Issue%' then 'PLRP Escalation: Anti-Subrogation Issue'
+			When #JB_JitBit1.Category like '%Liens - QA%' and #JB_JitBit1.Detail like '%QA%' then 'QA: QA'
+			When #JB_JitBit1.Category like '%Liens - Questionnaires%' and #JB_JitBit1.Detail like '%Other%' then 'Questionnaires: Other'
+			When #JB_JitBit1.Category like '%Liens - Questionnaires%' and #JB_JitBit1.Detail like '%Weekly Sweep%' then 'Questionnaires: Weekly Sweep'
+			When #JB_JitBit1.Category like '%Liens - Questionnaires%' and #JB_JitBit1.Detail like '%Main Processing%' then 'Questionnaires: Main Processing'
+			When #JB_JitBit1.Category like '%Liens - Questionnaires%' and #JB_JitBit1.Detail like '%Create/Edit Work Order%' then 'Questionnaires: Create/Edit Work Order'
+			When #JB_JitBit1.Category like '%Liens - Questionnaires%' and #JB_JitBit1.Detail like '%GWS Transcription Needed%' then 'Questionnaires: GWS Transcription Needed'
+			When #JB_JitBit1.Category like '%Liens - Questionnaires%' and #JB_JitBit1.Detail like '%Research/Correct Misc. Discrepancies%' then 'Questionnaires: Research/Correct Misc. Discrepancies'
+			When #JB_JitBit1.Category like '%Liens - Questionnaires%' and #JB_JitBit1.Detail like '%Private Data Processing%' then 'Questionnaires: Private Data Processing'
+			When #JB_JitBit1.Category like '%Liens - Questionnaires%' and #JB_JitBit1.Detail like '%Discrepancy Report Processing%' then 'Questionnaires: Discrepancy Report Processing'
+			When #JB_JitBit1.Category like '%Liens - Special Projects%' and #JB_JitBit1.Detail like '%Update Collector Table%' then 'Special Projects: Update Collector Table'
+			When #JB_JitBit1.Category like '%Liens - Special Projects%' and #JB_JitBit1.Detail like '%Update Jitbit System%' then 'Special Projects: Update Jitbit System'
+			When #JB_JitBit1.Category like '%Liens - Special Projects%' and #JB_JitBit1.Detail like '%Part C Scope Discrepancy Sweep%' then 'Special Projects: Part C Scope Discrepancy Sweep'
+			When #JB_JitBit1.Category like '%Liens - Special Projects%' and #JB_JitBit1.Detail like '%Other%' then 'Special Projects: Other'
+			When #JB_JitBit1.Category like '%Liens - Special Projects%' and #JB_JitBit1.Detail like '%Update Medicare Report Reference%' then 'Special Projects: Update Medicare Report Reference'
+			When #JB_JitBit1.Category like '%Liens - Special Projects%' and #JB_JitBit1.Detail like '%Reporting%' then 'Special Projects: Reporting'
+			When #JB_JitBit1.Category like '%Liens - Special Projects%' and #JB_JitBit1.Detail like '%Update Lien Paid Date%' then 'Special Projects: Update Lien Paid Date'
+			When #JB_JitBit1.Category like '%Liens - Special Projects%' and #JB_JitBit1.Detail like '%Update Assigned User Ids%' then 'Special Projects: Update Assigned User Ids'
+			When #JB_JitBit1.Category like '%Liens - Special Projects%' and #JB_JitBit1.Detail like '%Research/Correct Misc. Discrepancies%' then 'Special Projects: Research/Correct Misc. Discrepancies'
+			When #JB_JitBit1.Category like '%Liens - SQL%' and #JB_JitBit1.Detail like '%Tool Development / Misc. Python%' then 'SQL: Tool Development / Misc. Python'
+			When #JB_JitBit1.Category like '%Liens - SQL%' and #JB_JitBit1.Detail like '%Tool Development / Update/Write Questionnaire Queries%' then 'SQL: Tool Development / Update/Write Questionnaire Queries'
+			When #JB_JitBit1.Category like '%Liens - SQL%' and #JB_JitBit1.Detail like '%Tool Development / Other%' then 'SQL: Tool Development / Other'
+			When #JB_JitBit1.Category like '%Liens - SQL%' and #JB_JitBit1.Detail like '%Tool Development / Tool Development%' then 'SQL: Tool Development / Tool Development'
+			When #JB_JitBit1.Category like '%Liens - SQL%' and #JB_JitBit1.Detail like '%Tool Development / Update Jitbit System%' then 'SQL: Tool Development / Update Jitbit System'
+			When #JB_JitBit1.Category like '%Liens - SQL%' and #JB_JitBit1.Detail like '%Tool Development / COL Tool%' then 'SQL: Tool Development / COL Tool'
+			When #JB_JitBit1.Category like '%Liens - SQL%' and #JB_JitBit1.Detail like '%Tool Development / Ticketing%' then 'SQL: Tool Development / Ticketing'
+			When #JB_JitBit1.Category like '%Liens - SQL%' and #JB_JitBit1.Detail like '%Tool Development / MIsc. SQL%' then 'SQL: Tool Development / MIsc. SQL'
+			When #JB_JitBit1.Category like '%Liens - SQL%' and #JB_JitBit1.Detail like '%Tool Development / Update/Write Medicaid SQL Queries%' then 'SQL: Tool Development / Update/Write Medicaid SQL Queries'
+			When #JB_JitBit1.Category like '%Liens - SQL%' and #JB_JitBit1.Detail like '%Tool Development / Tableau%' then 'SQL: Tool Development / Tableau'
+			When #JB_JitBit1.Category like '%Liens - Under Review%' and #JB_JitBit1.Detail like '%Hold / Other%' then 'Under Review: Hold / Other'
+			When #JB_JitBit1.Category like '%Liens - Under Review%' and #JB_JitBit1.Detail like '%Hold / Research/Correct Misc. Discrepancies%' then 'Under Review: Hold / Research/Correct Misc. Discrepancies'
+			When #JB_JitBit1.Category like '%Liens - Under Review%' and #JB_JitBit1.Detail like '%Hold / Update Misc. Lien Data%' then 'Under Review: Hold / Update Misc. Lien Data'
+			When #JB_JitBit1.Category like '%PLRP Escalation%' and #JB_JitBit1.Detail like '%Other%' then 'PLRP Escalation: Other'
+			When #JB_JitBit1.Category like '%SLAM%' and #JB_JitBit1.Detail like '%LPM Tech Requests / Report a Bug%' then 'SLAM: LPM Tech Requests / Report a Bug'
+			When #JB_JitBit1.Category like '%SLAM%' and #JB_JitBit1.Detail like '%LPM Tech Requests / Enhancement Request%' then 'SLAM: LPM Tech Requests / Enhancement Request'
+			Else 'Look Into'
+			End as 'SLA_Category',
+		Case
+			When #JB_JitBit1.Category like '%Liens - Case Updates%' then 14
+			When #JB_JitBit1.Category like '%Liens - Claims%' and #JB_JitBit1.Detail like '%Other%' then 14
+			When #JB_JitBit1.Category like '%Liens - Claims%' and #JB_JitBit1.Detail like '%Process Medicaid EV and Claims Response%' then 7
+			When #JB_JitBit1.Category like '%Liens - Claims%' and #JB_JitBit1.Detail like '%Process PLRP Claims Response%' then 7
+			When #JB_JitBit1.Category like '%Liens - Claims%' and #JB_JitBit1.Detail like '%Process Global Values Rec%' then 7
+			When #JB_JitBit1.Category like '%Liens - Claims%' and #JB_JitBit1.Detail like '%Process Medicaid Claims Response%' then 7
+			When #JB_JitBit1.Category like '%Liens - Claims%' and #JB_JitBit1.Detail like '%Process Non-PLRP EV & Claims Response%' then 7
+			When #JB_JitBit1.Category like '%Liens - Claims%' and #JB_JitBit1.Detail like '%Process Medicaid Audits Response%' then 7
+			When #JB_JitBit1.Category like '%Liens - Claims%' and #JB_JitBit1.Detail like '%Review Claimants for Medicare Compromise%' then 7
+			When #JB_JitBit1.Category like '%Liens - Claims%' and #JB_JitBit1.Detail like '%Update Misc. Lien Data%' then 7
+			When #JB_JitBit1.Category like '%Liens - Claims%' and #JB_JitBit1.Detail like '%Run Files Through Auditor%' then 7
+			When #JB_JitBit1.Category like '%Liens - Claims%' and #JB_JitBit1.Detail like '%Process PLRP EV and Claims Response%' then 7
+			When #JB_JitBit1.Category like '%Liens - Claims%' and #JB_JitBit1.Detail like '%Create or Update MCOs%' then 7
+			When #JB_JitBit1.Category like '%Liens - Claims%' and #JB_JitBit1.Detail like '%Research/Correct Misc. Discrepancies%' then 7
+			When #JB_JitBit1.Category like '%Liens - Claims%' and #JB_JitBit1.Detail like '%Create Injury Detail (Global Values Submission)%' then 7
+			When #JB_JitBit1.Category like '%Liens - Claims Online%' and #JB_JitBit1.Detail like '%Other%' then 7
+			When #JB_JitBit1.Category like '%Liens - Claims Online%' and #JB_JitBit1.Detail like '%Research/Correct Misc. Discrepancies%' then 7
+			When #JB_JitBit1.Category like '%Liens - Claims Online%' and #JB_JitBit1.Detail like '%Executive Management or Ethan Request%' then 7
+			When #JB_JitBit1.Category like '%Liens - Claims Online%' and #JB_JitBit1.Detail like '%One-Off Update%' then 7
+			When #JB_JitBit1.Category like '%Liens - Claims Online%' and #JB_JitBit1.Detail like '%Process Final Report%' then 14
+			When #JB_JitBit1.Category like '%Liens - Claims Online%' and #JB_JitBit1.Detail like '%Process Misc. Report%' then 7
+			When #JB_JitBit1.Category like '%Liens - Claims Online%' and #JB_JitBit1.Detail like '%Research%' then 7
+			When #JB_JitBit1.Category like '%Liens - Claims Online%' and #JB_JitBit1.Detail like '%Bulk Edit Update for a Case%' then 3
+			When #JB_JitBit1.Category like '%Liens - Claims Online%' and #JB_JitBit1.Detail like '%Process Draft Report%' then 3
+			When #JB_JitBit1.Category like '%Liens - EV%' and #JB_JitBit1.Detail like '%Process CMS VOE - Main%' then 7
+			When #JB_JitBit1.Category like '%Liens - EV%' and #JB_JitBit1.Detail like '%Update Misc. Lien Data%' then 7
+			When #JB_JitBit1.Category like '%Liens - EV%' and #JB_JitBit1.Detail like '%Create or Update MCOs%' then 7
+			When #JB_JitBit1.Category like '%Liens - EV%' and #JB_JitBit1.Detail like '%Create Medicare VOE Submission%' then 7
+			When #JB_JitBit1.Category like '%Liens - EV%' and #JB_JitBit1.Detail like '%Process CMS VOE - Reverification Data (Main Processing)%' then 7
+			When #JB_JitBit1.Category like '%Liens - EV%' and #JB_JitBit1.Detail like '%Process Medicaid EV Response%' then 7
+			When #JB_JitBit1.Category like '%Liens - EV%' and #JB_JitBit1.Detail like '%Process PLRP No Interest List%' then 7
+			When #JB_JitBit1.Category like '%Liens - EV%' and #JB_JitBit1.Detail like '%Other%' then 14
+			When #JB_JitBit1.Category like '%Liens - EV%' and #JB_JitBit1.Detail like '%Research/Correct Misc. Discrepancies%' then 14
+			When #JB_JitBit1.Category like '%Liens - EV%' and #JB_JitBit1.Detail like '%Process CMS VOE - Part Cs%' then 7
+			When #JB_JitBit1.Category like '%Liens - EV%' and #JB_JitBit1.Detail like '%Update Medicare Report Reference%' then 7
+			When #JB_JitBit1.Category like '%Liens - EV%' and #JB_JitBit1.Detail like '%Process BCRC Response%' then 7
+			When #JB_JitBit1.Category like '%Liens - EV%' and #JB_JitBit1.Detail like '%Double Nos%' then 7
+			When #JB_JitBit1.Category like '%Liens - EV%' and #JB_JitBit1.Detail like '%Process Tricare Report%' then 7
+			When #JB_JitBit1.Category like '%Liens - EV%' and #JB_JitBit1.Detail like '%HMO Code Research%' then 7
+			When #JB_JitBit1.Category like '%Liens - EV%' and #JB_JitBit1.Detail like '%Process PLRP EV Response%' then 7
+			When #JB_JitBit1.Category like '%Liens - Finalization%' and #JB_JitBit1.Detail like '%Research/Correct Misc. Discrepancies%' then 14
+			When #JB_JitBit1.Category like '%Liens - Finalization%' and #JB_JitBit1.Detail like '%Other%' then 14
+			When #JB_JitBit1.Category like '%Liens - Finalization%' and #JB_JitBit1.Detail like '%Lien Finalization%' then 7
+			When #JB_JitBit1.Category like '%Liens - Finalization%' and #JB_JitBit1.Detail like '%Update Misc. Lien Data%' then 7
+			When #JB_JitBit1.Category like '%Liens - GRG%' and #JB_JitBit1.Detail like '%Research%' then 7
+			When #JB_JitBit1.Category like '%Liens - GRG%' and #JB_JitBit1.Detail like '%Other%' then 14
+			When #JB_JitBit1.Category like '%Liens - GRG%' and #JB_JitBit1.Detail like '%Update One-Off from HB Report%' then 14
+			When #JB_JitBit1.Category like '%Liens - GRG%' and #JB_JitBit1.Detail like '%Send GRG Updated Claimant and/or Discrepancy Data%' then 14
+			When #JB_JitBit1.Category like '%Liens - GRG%' and #JB_JitBit1.Detail like '%GRG Data Discrepancies%' then 7
+			When #JB_JitBit1.Category like '%Liens - GRG%' and #JB_JitBit1.Detail like '%Process Holdback Report%' then 14
+			When #JB_JitBit1.Category like '%Liens - Intake%' and #JB_JitBit1.Detail like '%Client Receivables / Update Surgery, Ingestion, or Injury Data%' then 7
+			When #JB_JitBit1.Category like '%Liens - Intake%' and #JB_JitBit1.Detail like '%Client Receivables / Research/Correct Misc. Discrepancies%' then 7
+			When #JB_JitBit1.Category like '%Liens - Intake%' and #JB_JitBit1.Detail like '%Client Receivables / Update SSN or DOB (or Both)%' then 7
+			When #JB_JitBit1.Category like '%Liens - Intake%' and #JB_JitBit1.Detail like '%Client Receivables / Create New Client(s)%' then 7
+			When #JB_JitBit1.Category like '%Liens - Intake%' and #JB_JitBit1.Detail like '%Client Receivables / Update Claimant Demographic Data%' then 7
+			When #JB_JitBit1.Category like '%Liens - Intake%' and #JB_JitBit1.Detail like '%Client Receivables / Scope Change/Check%' then 7
+			When #JB_JitBit1.Category like '%Liens - Intake%' and #JB_JitBit1.Detail like '%Client Receivables / Initial Case Intake (without instructions)%' then 7
+			When #JB_JitBit1.Category like '%Liens - Intake%' and #JB_JitBit1.Detail like '%Client Receivables / Create New Product(s)%' then 7
+			When #JB_JitBit1.Category like '%Liens - Intake%' and #JB_JitBit1.Detail like '%Client Receivables / Update Attorney Fees or Expenses (or Both)%' then 7
+			When #JB_JitBit1.Category like '%Liens - Intake%' and #JB_JitBit1.Detail like '%Client Receivables / Initial Case Intake%' then 7
+			When #JB_JitBit1.Category like '%Liens - Intake%' and #JB_JitBit1.Detail like '%Client Receivables / Initial Case Intake (with instructions)%' then 7
+			When #JB_JitBit1.Category like '%Liens - Intake%' and #JB_JitBit1.Detail like '%Client Receivables / Process AMS Inventory%' then 7
+			When #JB_JitBit1.Category like '%Liens - Intake%' and #JB_JitBit1.Detail like '%Client Receivables / Update Settlement Data Field(s)%' then 7
+			When #JB_JitBit1.Category like '%Liens - Intake%' and #JB_JitBit1.Detail like '%Client Receivables / Update Misc. Lien Data%' then 7
+			When #JB_JitBit1.Category like '%Liens - Intake%' and #JB_JitBit1.Detail like '%Client Receivables / Response to Missing Info%' then 7
+			When #JB_JitBit1.Category like '%Liens - Intake%' and #JB_JitBit1.Detail like '%Client Receivables / Other%' then 7
+			When #JB_JitBit1.Category like '%Liens - Intake%' and #JB_JitBit1.Detail like '%Client Receivables / Move Claimant/Liens from Hold/Closed Case to Active Case%' then 7
+			When #JB_JitBit1.Category like '%Liens - Intake%' and #JB_JitBit1.Detail like '%Client Receivables / Create/Update EIF Claimants%' then 7
+			When #JB_JitBit1.Category like '%Liens - Intake%' and #JB_JitBit1.Detail like '%Client Receivables / Misc. EIF Updates%' then 7
+			When #JB_JitBit1.Category like '%Liens - Intake%' and #JB_JitBit1.Detail like '%Client Receivables / Intake Inventory Review%' then 7
+			When #JB_JitBit1.Category like '%Liens - Intake%' and #JB_JitBit1.Detail like '%Client Receivables / Update QPO Data%' then 7
+			When #JB_JitBit1.Category like '%Liens - Intake%' and #JB_JitBit1.Detail like '%Client Receivables / Create Deficiencies%' then 7
+			When #JB_JitBit1.Category like '%Liens - Intake%' and #JB_JitBit1.Detail like '%Client Receivables / Move Claimant/Liens to Hold/Closed Case%' then 7
+			When #JB_JitBit1.Category like '%Liens - Intake%' and #JB_JitBit1.Detail like '%Client Receivables / Create/Update EIF Products%' then 7
+			When #JB_JitBit1.Category like '%Liens - Intake%' and #JB_JitBit1.Detail like '%Client Receivables / Update Settlement Date%' then 7
+			When #JB_JitBit1.Category like '%Liens - Intake%' and #JB_JitBit1.Detail like '%Client Receivables / Update Gross Settlement Amount%' then 7
+			When #JB_JitBit1.Category like '%Liens - Other%' and #JB_JitBit1.Detail like '%Other%' then 14
+			When #JB_JitBit1.Category like '%Liens - Other%' and #JB_JitBit1.Detail like '%Create HMO backup%' then 7
+			When #JB_JitBit1.Category like '%Liens - PLRP Escalation%' and #JB_JitBit1.Detail like '%Other%' then 14
+			When #JB_JitBit1.Category like '%Liens - PLRP Escalation%' and #JB_JitBit1.Detail like '%Anti-Subrogation Issue%' then 14
+			When #JB_JitBit1.Category like '%Liens - QA%' and #JB_JitBit1.Detail like '%QA%' then 3
+			When #JB_JitBit1.Category like '%Liens - Questionnaires%' and #JB_JitBit1.Detail like '%Other%' then 14
+			When #JB_JitBit1.Category like '%Liens - Questionnaires%' and #JB_JitBit1.Detail like '%Weekly Sweep%' then 7
+			When #JB_JitBit1.Category like '%Liens - Questionnaires%' and #JB_JitBit1.Detail like '%Main Processing%' then 14
+			When #JB_JitBit1.Category like '%Liens - Questionnaires%' and #JB_JitBit1.Detail like '%Create/Edit Work Order%' then 14
+			When #JB_JitBit1.Category like '%Liens - Questionnaires%' and #JB_JitBit1.Detail like '%GWS Transcription Needed%' then 14
+			When #JB_JitBit1.Category like '%Liens - Questionnaires%' and #JB_JitBit1.Detail like '%Research/Correct Misc. Discrepancies%' then 14
+			When #JB_JitBit1.Category like '%Liens - Questionnaires%' and #JB_JitBit1.Detail like '%Private Data Processing%' then 14
+			When #JB_JitBit1.Category like '%Liens - Questionnaires%' and #JB_JitBit1.Detail like '%Discrepancy Report Processing%' then 14
+			When #JB_JitBit1.Category like '%Liens - Special Projects%' and #JB_JitBit1.Detail like '%Update Collector Table%' then 7
+			When #JB_JitBit1.Category like '%Liens - Special Projects%' and #JB_JitBit1.Detail like '%Update Jitbit System%' then 7
+			When #JB_JitBit1.Category like '%Liens - Special Projects%' and #JB_JitBit1.Detail like '%Part C Scope Discrepancy Sweep%' then 7
+			When #JB_JitBit1.Category like '%Liens - Special Projects%' and #JB_JitBit1.Detail like '%Other%' then 7
+			When #JB_JitBit1.Category like '%Liens - Special Projects%' and #JB_JitBit1.Detail like '%Update Medicare Report Reference%' then 7
+			When #JB_JitBit1.Category like '%Liens - Special Projects%' and #JB_JitBit1.Detail like '%Reporting%' then 7
+			When #JB_JitBit1.Category like '%Liens - Special Projects%' and #JB_JitBit1.Detail like '%Update Lien Paid Date%' then 7
+			When #JB_JitBit1.Category like '%Liens - Special Projects%' and #JB_JitBit1.Detail like '%Update Assigned User Ids%' then 7
+			When #JB_JitBit1.Category like '%Liens - Special Projects%' and #JB_JitBit1.Detail like '%Research/Correct Misc. Discrepancies%' then 7
+			When #JB_JitBit1.Category like '%Liens - SQL%' and #JB_JitBit1.Detail like '%Tool Development / Misc. Python%' then 7
+			When #JB_JitBit1.Category like '%Liens - SQL%' and #JB_JitBit1.Detail like '%Tool Development / Update/Write Questionnaire Queries%' then 7
+			When #JB_JitBit1.Category like '%Liens - SQL%' and #JB_JitBit1.Detail like '%Tool Development / Other%' then 7
+			When #JB_JitBit1.Category like '%Liens - SQL%' and #JB_JitBit1.Detail like '%Tool Development / Tool Development%' then 7
+			When #JB_JitBit1.Category like '%Liens - SQL%' and #JB_JitBit1.Detail like '%Tool Development / Update Jitbit System%' then 7
+			When #JB_JitBit1.Category like '%Liens - SQL%' and #JB_JitBit1.Detail like '%Tool Development / COL Tool%' then 7
+			When #JB_JitBit1.Category like '%Liens - SQL%' and #JB_JitBit1.Detail like '%Tool Development / Ticketing%' then 7
+			When #JB_JitBit1.Category like '%Liens - SQL%' and #JB_JitBit1.Detail like '%Tool Development / MIsc. SQL%' then 7
+			When #JB_JitBit1.Category like '%Liens - SQL%' and #JB_JitBit1.Detail like '%Tool Development / Update/Write Medicaid SQL Queries%' then 7
+			When #JB_JitBit1.Category like '%Liens - SQL%' and #JB_JitBit1.Detail like '%Tool Development / Tableau%' then 7
+			When #JB_JitBit1.Category like '%Liens - Under Review%' and #JB_JitBit1.Detail like '%Hold / Other%' then 14
+			When #JB_JitBit1.Category like '%Liens - Under Review%' and #JB_JitBit1.Detail like '%Hold / Research/Correct Misc. Discrepancies%' then 14
+			When #JB_JitBit1.Category like '%Liens - Under Review%' and #JB_JitBit1.Detail like '%Hold / Update Misc. Lien Data%' then 14
+			When #JB_JitBit1.Category like '%PLRP Escalation%' and #JB_JitBit1.Detail like '%Other%' then 14
+			When #JB_JitBit1.Category like '%SLAM%' and #JB_JitBit1.Detail like '%LPM Tech Requests / Report a Bug%' then 14
+			When #JB_JitBit1.Category like '%SLAM%' and #JB_JitBit1.Detail like '%LPM Tech Requests / Enhancement Request%' then 14
+			Else 14
+			End as 'SLA_Goal'
+
+
+from	#JB_JitBit1 
+		Join #JB_JitBit_MaxUpdated on #JB_JitBit_MaxUpdated.TicketId=#JB_JitBit1.TicketId
+		Join #JB_JitBit_MaxRow2 on #JB_JitBit_MaxRow2.TicketId=#JB_JitBit1.TicketId and #JB_JitBit_MaxRow2.MaxRow=#JB_JitBit1.Row#
+where	LinkedTicket is NULL or LEN(LinkedTicket) > 7
+Order by #JB_JitBit1.TicketId desc
+
+
+
+
+
