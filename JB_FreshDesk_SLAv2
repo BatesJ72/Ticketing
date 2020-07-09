@@ -1,0 +1,116 @@
+USE [S3Reporting]
+GO
+/****** Object:  StoredProcedure [dbo].[JB_FreshDesk_SLAv2]    Script Date: 7/9/2020 9:55:54 AM ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+ALTER procedure [dbo].[JB_FreshDesk_SLAv2]
+AS
+
+set nocount on
+
+
+-- Create temp table to get data from freshdesk with true due date
+select	freshdesk.*, 
+		case 
+			when [due date] is not null 
+			then [due date] 
+			else [Due By] 
+			end as 'True Due Date',
+		ROW_NUMBER ( )   OVER (partition by [ticket number] order by [ticket number], [updated on] asc) as Row#
+Into	#JB_FD
+from	freshdesk
+
+
+
+
+
+--Create temp table to get max udpated on date
+select		distinct [Ticket Number], max([Updated On]) as MaxDate
+into		#JB_FD_MaxUpdated
+from		freshdesk
+group by	[Ticket Number], [Assigned To], [Created On], [Status], [Priority], [Due By], [Due Date], [Resolved Time], [Requester Team], [Requester], [Plaintiff Lawfirm],
+			[Defendant], [Agency/Collector], [Category], [Detail], [Subject], [Type], [Completion Time Frame], [Processing Time], [Updated On], [Group]
+
+
+
+--Create temp table to get max row #
+
+select	[Ticket Number], max(Row#) as 'MaxRow'
+into	#JB_FD_MaxRow2
+from	#JB_FD
+group by [ticket number]
+
+
+
+
+--Join of all tables
+
+select	distinct #JB_FD.[Ticket Number], #JB_FD.[Assigned To], #JB_FD.[Created On], #JB_FD.[Status], #JB_FD.[Priority], #JB_FD.[Due By] as 'Calculated Due Date', #JB_FD.[Due Date] as 'Customer Due Date', #JB_FD.[True Due Date], #JB_FD.[Resolved Time], #JB_FD.[Requester Team], #JB_FD.[Requester], #JB_FD.[Plaintiff Lawfirm],
+		#JB_FD.[Defendant], #JB_FD.[Agency/Collector], #JB_FD.[Category], #JB_FD.[Detail], 
+		Case
+			When #JB_FD.[Category] = 'Inventories' then 'AMS Inventories'
+			When #JB_FD.[Category] = 'Medicaid' and #JB_FD.[Detail] like '%audit%' then 'Audit - Mcaid'
+			When #JB_FD.[Category] = 'Medicaid' and #JB_FD.[Detail] like '%claims%' and #JB_FD.[Detail] not like '%audit%' then 'CLaims - Mcaid'
+			When #JB_FD.[Category] = 'Medicare' and #JB_FD.[Detail] like 'Process Global Values%' then 'Claims - Mcare (global)'
+			When #JB_FD.[Category] = 'Claims Online' and #JB_FD.[Detail] like 'Weekly Update' then 'COL - Weekly Update'
+			When #JB_FD.[Category] = 'Claims Online' and #JB_FD.[Detail] like 'Process Draft Report' then 'COL - Draft Report'
+			When #JB_FD.[Category] = 'Claims Online' and #JB_FD.[Detail] like 'Process Final Report' then 'COL - Final Report'
+			When #JB_FD.[Category] = 'Data Discrepancies' and #JB_FD.[Detail] like '%collector table%' then 'Collector Table'
+			When #JB_FD.[Category] = 'EIF' then 'Create EIF Claimants'
+			When #JB_FD.[Category] = 'Medicaid' and #JB_FD.[Detail] like '%ev%' and #JB_FD.[Detail] not like '%claims%' then 'EV - Mcaid'
+			When #JB_FD.[Category] = 'Medicare' and #JB_FD.[Detail] like '%bcrc%' then 'EV - Mcare (traditional)'
+			When #JB_FD.[Category] = 'Medicare' and #JB_FD.[Detail] like '%main%' then 'EV - Mcare (global)'
+			When #JB_FD.[Category] = 'Medicare' and #JB_FD.[Detail] like '%part c%' then 'Mcare - Part C'
+			When #JB_FD.[Category] = 'GRG' and #JB_FD.[Detail] like 'Process Holdback Report' then 'GRG HB Report'
+			When #JB_FD.[Category] = 'Intake' then 'Intake'
+			When #JB_FD.[Category] = 'QA' then 'QA'
+			When #JB_FD.[Category] = 'Questionnaire' and #JB_FD.[Detail] like 'Main Processing' then 'Questionnaires - Main'
+			When #JB_FD.[Category] = 'Questionnaire' and #JB_FD.[Detail] like '%discrepancy%' then 'Questionnaires - Discrepancy'
+			When #JB_FD.[Category] = 'Lien Level' and #JB_FD.[Detail] like '%tricare%' then 'Tricare'
+			Else 'Other'
+			End as 'SLA Category',
+		Case 
+			When #JB_FD.[Category] = 'Inventories' then 7
+			When #JB_FD.[Category] = 'Medicaid' and #JB_FD.[Detail] like '%audit%' then 7
+			When #JB_FD.[Category] = 'Medicaid' and #JB_FD.[Detail] like '%claims%' and #JB_FD.[Detail] not like '%audit%' then 7
+			When #JB_FD.[Category] = 'Medicare' and #JB_FD.[Detail] like 'Process Global Values%' then 7
+			When #JB_FD.[Category] = 'Claims Online' and #JB_FD.[Detail] like 'Weekly Update' then 3
+			When #JB_FD.[Category] = 'Claims Online' and #JB_FD.[Detail] like 'Process Draft Report' then 3
+			When #JB_FD.[Category] = 'Claims Online' and #JB_FD.[Detail] like 'Process Final Report' then 14
+			When #JB_FD.[Category] = 'Data Discrepancies' and #JB_FD.[Detail] like '%collector table%' then 7
+			When #JB_FD.[Category] = 'EIF' then 7
+			When #JB_FD.[Category] = 'Medicaid' and #JB_FD.[Detail] like '%ev%' and #JB_FD.[Detail] not like '%claims%' then 7
+			When #JB_FD.[Category] = 'Medicare' and #JB_FD.[Detail] like '%bcrc%' then 7
+			When #JB_FD.[Category] = 'Medicare' and #JB_FD.[Detail] like '%main%' then 7
+			When #JB_FD.[Category] = 'Medicare' and #JB_FD.[Detail] like '%part c%' then 7
+			When #JB_FD.[Category] = 'GRG' and #JB_FD.[Detail] like 'Process Holdback Report' then 14
+			When #JB_FD.[Category] = 'Intake' then 7
+			When #JB_FD.[Category] = 'QA' then 3
+			When #JB_FD.[Category] = 'Questionnaire' and #JB_FD.[Detail] like 'Main Processing' then 14
+			When #JB_FD.[Category] = 'Questionnaire' and #JB_FD.[Detail] like '%discrepancy%' then 14
+			When #JB_FD.[Category] = 'Lien Level' and #JB_FD.[Detail] like '%tricare%' then 7
+			Else ''
+			End as 'SLA Goal',
+		#JB_FD.[Subject], #JB_FD.[Type], #JB_FD.[Completion Time Frame], #JB_FD.[Processing Time], 
+		Case
+			When #JB_FD.[Processing Time] = 'Less than 1 hour' then 0.5
+			When #JB_FD.[Processing Time] = '1-4 hours' then 2.5
+			When #JB_FD.[Processing Time] = '4-8 hours' then 6
+			When #JB_FD.[Processing Time] = 'More than 8 hours' then 10
+			Else 0
+			End as 'Avg Processing Time Required',
+		#JB_FD.[Updated On], #JB_FD.[Group]
+
+from	#JB_FD 
+		Join #JB_FD_MaxUpdated on #JB_FD_MaxUpdated.[Ticket Number]=#JB_FD.[Ticket Number]
+		Join #JB_FD_MaxRow2 on #JB_FD_MaxRow2.[Ticket Number]=#JB_FD.[Ticket Number] and #JB_FD_MaxRow2.MaxRow=#JB_FD.Row#
+Order by #JB_FD.[Ticket Number] desc
+
+
+
+
+
